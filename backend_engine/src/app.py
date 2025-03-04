@@ -4,9 +4,14 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 from db import init_db
+import logging
 
 # Initialize Sanic app
 app = Sanic("backend_engine")
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+app.ctx.logger = logging.getLogger(__name__)
 
 # Load environment variables
 env_path = Path(__file__).parent.parent.parent / 'config.env'
@@ -37,17 +42,20 @@ app.blueprint(worker_bp)
 async def health_check(request):
     return json({"status": "healthy"})
 
-@app.before_server_start
-async def setup_db(app, loop):
-    """Initialize database before the server starts"""
+async def setup_db(app, _):
     app.ctx.logger.info("Initializing database...")
     await init_db()
     app.ctx.logger.info("Database initialized successfully")
+
+# Register startup listener
+app.register_listener(setup_db, "before_server_start")
 
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=8000,
         debug=app.config.DEBUG,
-        auto_reload=app.config.DEBUG
+        auto_reload=app.config.DEBUG,
+        workers=1,  # Use single worker for container
+        access_log=True  # Enable access logs for debugging
     )

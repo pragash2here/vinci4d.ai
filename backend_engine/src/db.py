@@ -4,13 +4,62 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, JSO
 import enum
 from datetime import datetime
 import os
+from pathlib import Path
 from dotenv import load_dotenv
+import asyncio
+import asyncpg
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from config.env
+env_path = Path(__file__).parent.parent.parent / 'config.env'
+load_dotenv(env_path)
 
-# Create async engine
-DATABASE_URL = os.getenv('DATABASE_URL').replace('sqlite:///', 'postgresql+asyncpg:///')
+# Get database connection info from environment
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set")
+
+# Function to create database if it doesn't exist
+async def ensure_database_exists():
+    print("Checking if database exists...")
+    
+    # Extract connection parameters
+    db_url = DATABASE_URL
+    if db_url.startswith('postgresql+asyncpg://'):
+        db_url = db_url.replace('postgresql+asyncpg://', 'postgresql://')
+    
+    # Extract database name
+    db_name = db_url.split('/')[-1]
+    
+    # Create connection string to postgres database (for admin operations)
+    admin_url = db_url.rsplit('/', 1)[0] + '/postgres'
+    
+    try:
+        # Connect to default postgres database
+        conn = await asyncpg.connect(admin_url)
+        
+        # Check if our database exists
+        exists = await conn.fetchval(
+            "SELECT 1 FROM pg_database WHERE datname = $1", db_name
+        )
+        
+        if not exists:
+            print(f"Creating database {db_name}...")
+            # Create the database
+            await conn.execute(f'CREATE DATABASE "{db_name}"')
+            print(f"Database {db_name} created successfully!")
+        else:
+            print(f"Database {db_name} already exists.")
+            
+        await conn.close()
+        return True
+    except Exception as e:
+        print(f"Error checking/creating database: {e}")
+        return False
+
+# Convert the URL to use asyncpg driver
+if DATABASE_URL.startswith('postgresql://'):
+    DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
+
 engine = create_async_engine(DATABASE_URL, echo=True)
 
 # Create async session
@@ -27,6 +76,13 @@ class GridStatus(enum.Enum):
     PAUSED = "paused"
     TERMINATED = "terminated"
     ERROR = "error"
+
+class FunctionStatus(enum.Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 class TaskStatus(enum.Enum):
     PENDING = "pending"
@@ -53,10 +109,9 @@ class Grid(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     utilization = Column(Float, default=0.0)  # Percentage of grid being utilized
     free_slots = Column(Integer)  # Number of free slots available
-    metadata = Column(JSON, default={})  # Additional grid properties
-
-class Task(Base):
-    __tablename__ = 'tasks'
+    
+class Function(Base):
+    __tablename__ = 'functions'
 
     uid = Column(String, primary_key=True)
     name = Column(String, nullable=False)
@@ -66,11 +121,20 @@ class Task(Base):
     resource_requirements = Column(JSON, nullable=False)  # CPU, Memory, GPU requirements
     started_at = Column(DateTime)
     ended_at = Column(DateTime)
-    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
+    status = Column(Enum(FunctionStatus), default=FunctionStatus.PENDING)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     logs_url = Column(String)  # URL to task logs in logstore
-    metadata = Column(JSON, default={})  # Additional task properties
+
+class Task(Base):
+    __tablename__ = 'tasks'
+
+    uid = Column(String, primary_key=True)
+    function_uid = Column(String, ForeignKey('functions.uid'))
+    worker_uid = Column(String, ForeignKey('workers.uid'))
+    status = Column(Enum(TaskStatus), default=TaskStatus.PENDING)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Worker(Base):
     __tablename__ = 'workers'
@@ -89,12 +153,23 @@ class Worker(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     spec = Column(JSON)  # Additional worker specifications
-    metadata = Column(JSON, default={})  # Additional worker properties
-
+    
 # Database initialization function
 async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    print("Starting database initialization...")
+    try:
+        # First ensure the database exists
+        await ensure_database_exists()
+        
+        # Then create tables
+        async with engine.begin() as conn:
+            print("Creating database tables...")
+            await conn.run_sync(Base.metadata.create_all)
+            print("Database tables created successfully!")
+        return True
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        return False
 
 # Database session context manager
 async def get_session():

@@ -1,0 +1,5 @@
+sanic
+dotenv
+sqlalchemy
+asyncpg
+greenlet

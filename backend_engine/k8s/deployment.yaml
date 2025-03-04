@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vinci4d-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vinci4d-backend
+  template:
+    metadata:
+      labels:
+        app: vinci4d-backend
+    spec:
+      containers:
+      - name: backend
+        image: vinci4d-backend:latest
+        imagePullPolicy: IfNotPresent  # For local development
+        ports:
+        - containerPort: 8000
+        env:
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://postgres:postgres@vinci4d-postgres:5432/engine_db"
+        - name: SECRET_KEY
+          value: "your_secret_key"
+        - name: DEBUG
+          value: "True"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vinci4d-backend
+spec:
+  selector:
+    app: vinci4d-backend
+  ports:
+  - port: 8000
+    targetPort: 8000
+  type: ClusterIP 
