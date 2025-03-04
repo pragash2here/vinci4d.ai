@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vinci4d-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vinci4d-postgres
+  template:
+    metadata:
+      labels:
+        app: vinci4d-postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:latest
+        env:
+        - name: POSTGRES_DB
+          value: engine_db
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          value: postgres
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-storage
+        hostPath:
+          path: /Users/pragash/code/vinci4d.ai/postgres/data
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vinci4d-postgres
+spec:
+  selector:
+    app: vinci4d-postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP
