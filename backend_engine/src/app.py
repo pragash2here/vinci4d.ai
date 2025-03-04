@@ -3,6 +3,7 @@ from sanic.response import json
 from pathlib import Path
 import os
 from dotenv import load_dotenv
+from db import init_db
 
 # Initialize Sanic app
 app = Sanic("backend_engine")
@@ -35,6 +36,13 @@ app.blueprint(worker_bp)
 @app.route("/health")
 async def health_check(request):
     return json({"status": "healthy"})
+
+@app.before_server_start
+async def setup_db(app, loop):
+    """Initialize database before the server starts"""
+    app.ctx.logger.info("Initializing database...")
+    await init_db()
+    app.ctx.logger.info("Database initialized successfully")
 
 if __name__ == "__main__":
     app.run(
