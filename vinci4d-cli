@@ -1,0 +1,6 @@
+#!/bin/bash
+# Save this as vinci4d-cli in your project root and make it executable with chmod +x vinci4d-cli
+
+# Run the CLI command
+cd backend_engine
+python3 src/cli/main.py "$@" 

@@ -3,3 +3,8 @@ dotenv
 sqlalchemy
 asyncpg
 greenlet
+click
+tabulate
+requests
+python-dotenv
+urllib3
