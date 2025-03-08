@@ -22,7 +22,7 @@ def list_functions():
             return
         
         # Format data for tabulate
-        headers = ["UID", "Name", "Grid", "Status", "Resources", "Created"]
+        headers = ["UID", "Name", "Grid", "Status", "Docker Image", "Resources", "Created"]
         table_data = []
         
         for fn in functions:
@@ -46,6 +46,7 @@ def list_functions():
                 fn["name"],
                 fn["grid_uid"],
                 fn["status"],
+                fn.get("docker_image", "default"),
                 resource_str.strip(),
                 fn["created_at"].split("T")[0]  # Format date
             ])
@@ -55,49 +56,43 @@ def list_functions():
         click.echo(f"Error: {str(e)}")
 
 @fn_cli.command(name="create")
-@click.option("--name", "-n", required=True, help="Function name")
+@click.argument("name")
 @click.option("--grid", "-g", required=True, help="Grid UID")
-@click.option("--script", "-s", required=True, help="Script path")
-@click.option("--resources", "-r", required=True, help="Resource requirements (JSON string or file path)")
+@click.option("--script", "-s", required=True, help="Path to script")
 @click.option("--artifactory", "-a", help="Artifactory URL")
-def create_function(name, grid, script, resources, artifactory):
+@click.option("--cpu", "-c", default=1, help="CPU cores required")
+@click.option("--memory", "-m", default=1024, help="Memory required (MB)")
+@click.option("--gpu", "-G", is_flag=True, help="Requires GPU")
+@click.option("--docker-image", "-d", default="default", help="Docker image to use")
+def create_function_cmd(name, grid, script, artifactory, cpu, memory, gpu, docker_image):
     """Create a new function"""
     try:
-        # Parse resources - could be a JSON string or a file path
-        try:
-            # First try to parse as JSON string
-            resource_requirements = json.loads(resources)
-        except json.JSONDecodeError:
-            # If that fails, try to read from file
-            if os.path.exists(resources):
-                try:
-                    with open(resources, 'r') as f:
-                        resource_requirements = json.load(f)
-                except Exception as e:
-                    click.echo(f"Error reading resources file: {e}")
-                    return
-            else:
-                click.echo("Resources must be valid JSON or a path to a JSON file")
-                return
+        # Prepare resource requirements
+        resources = {
+            "cpu": cpu,
+            "memory": memory,
+            "gpu": gpu
+        }
         
-        # Read script file if it exists
-        script_content = None
-        if os.path.exists(script):
-            with open(script, 'r') as f:
-                script_content = f.read()
-        
-        client = APIClient()
+        # Prepare function data
         data = {
             "name": name,
             "grid_uid": grid,
             "script_path": script,
-            "script_content": script_content,
-            "artifactory_url": artifactory,
-            "resource_requirements": resource_requirements
+            "resource_requirements": resources,
+            "docker_image": docker_image
         }
         
-        response = client.post("/api/functions", data)
-        click.echo(f"Function created with UID: {response['uid']}")
+        if artifactory:
+            data["artifactory_url"] = artifactory
+        
+        client = APIClient()
+        function = client.post("/api/functions", data)
+        
+        click.echo(f"Function created with UID: {function['uid']}")
+        click.echo(f"Name: {function['name']}")
+        click.echo(f"Docker Image: {function['docker_image']}")
+        click.echo(f"Status: {function['status']}")
     except Exception as e:
         click.echo(f"Error: {str(e)}")
 
@@ -112,6 +107,7 @@ def show_function(uid):
         click.echo(f"Function: {function['name']} ({function['uid']})")
         click.echo(f"Grid: {function['grid_uid']}")
         click.echo(f"Script: {function['script_path']}")
+        click.echo(f"Docker Image: {function.get('docker_image', 'default')}")
         click.echo(f"Status: {function['status']}")
         
         # Get task count

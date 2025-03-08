@@ -1,0 +1,254 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ${WORKER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: vinci4d-worker
+    grid: ${GRID_UID}
+spec:
+  serviceName: ${WORKER_NAME}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vinci4d-worker
+      worker: ${WORKER_UID}
+  template:
+    metadata:
+      labels:
+        app: vinci4d-worker
+        worker: ${WORKER_UID}
+        grid: ${GRID_UID}
+    spec:
+      containers:
+      - name: worker
+        image: ${DOCKER_IMAGE}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "${CPU_REQUEST}"
+            memory: "${MEMORY_REQUEST}Mi"
+          limits:
+            cpu: "${CPU_LIMIT}"
+            memory: "${MEMORY_LIMIT}Mi"
+            ${GPU_LIMIT}
+        env:
+        - name: WORKER_UID
+          value: "${WORKER_UID}"
+        - name: GRID_UID
+          value: "${GRID_UID}"
+        - name: BACKEND_ENGINE_URL
+          value: "${BACKEND_ENGINE_URL}"
+        - name: LOGSTORE_URL
+          value: "${LOGSTORE_URL}"
+        - name: ARTIFACTORY_URL
+          value: "${ARTIFACTORY_URL}"
+        volumeMounts:
+        - name: worker-data
+          mountPath: /data
+        - name: worker-config
+          mountPath: /config
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          pip install requests
+          
+          # Worker initialization script
+          cat > /tmp/worker.py << 'EOF'
+          #!/usr/bin/env python3
+          import os
+          import sys
+          import time
+          import json
+          import socket
+          import requests
+          import logging
+          from datetime import datetime
+          
+          # Configure logging
+          logging.basicConfig(
+              level=logging.INFO,
+              format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+          )
+          logger = logging.getLogger('worker')
+          
+          # Worker configuration
+          WORKER_UID = os.environ.get('WORKER_UID')
+          GRID_UID = os.environ.get('GRID_UID')
+          BACKEND_ENGINE_URL = os.environ.get('BACKEND_ENGINE_URL', 'http://backend-engine:8000')
+          LOGSTORE_URL = os.environ.get('LOGSTORE_URL', 'http://logstore:8000')
+          ARTIFACTORY_URL = os.environ.get('ARTIFACTORY_URL', 'http://artifactory:8000')
+          
+          # Worker state
+          hostname = socket.gethostname()
+          
+          def register_worker():
+              """Register worker with backend engine"""
+              logger.info(f"Registering worker {WORKER_UID} with backend engine")
+              try:
+                  response = requests.post(
+                      f"{BACKEND_ENGINE_URL}/api/workers/{WORKER_UID}/online",
+                      json={}
+                  )
+                  if response.status_code == 200:
+                      logger.info("Worker registered successfully")
+                      return True
+                  else:
+                      logger.error(f"Failed to register worker: {response.text}")
+                      return False
+              except Exception as e:
+                  logger.error(f"Error registering worker: {e}")
+                  return False
+          
+          def send_heartbeat():
+              """Send heartbeat to backend engine"""
+              try:
+                  response = requests.post(
+                      f"{BACKEND_ENGINE_URL}/api/workers/{WORKER_UID}/heartbeat",
+                      json={
+                          "timestamp": datetime.utcnow().isoformat(),
+                          "hostname": hostname,
+                          "status": "online"
+                      }
+                  )
+                  if response.status_code != 200:
+                      logger.warning(f"Failed to send heartbeat: {response.text}")
+              except Exception as e:
+                  logger.warning(f"Error sending heartbeat: {e}")
+          
+          def check_for_tasks():
+              """Check for pending tasks assigned to this worker"""
+              try:
+                  response = requests.get(
+                      f"{BACKEND_ENGINE_URL}/api/tasks",
+                      params={"worker": WORKER_UID, "status": "pending"}
+                  )
+                  if response.status_code == 200:
+                      tasks = response.json()
+                      if tasks:
+                          logger.info(f"Found {len(tasks)} pending tasks")
+                          for task in tasks:
+                              process_task(task)
+                  else:
+                      logger.warning(f"Failed to check for tasks: {response.text}")
+              except Exception as e:
+                  logger.warning(f"Error checking for tasks: {e}")
+          
+          def process_task(task):
+              """Process a single task"""
+              task_uid = task["uid"]
+              function_uid = task["function_uid"]
+              
+              logger.info(f"Processing task {task_uid} for function {function_uid}")
+              
+              try:
+                  # Update task status to running
+                  requests.post(
+                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/start",
+                      json={}
+                  )
+                  
+                  # Get function details
+                  response = requests.get(f"{BACKEND_ENGINE_URL}/api/functions/{function_uid}")
+                  if response.status_code != 200:
+                      raise Exception(f"Failed to get function details: {response.text}")
+                  
+                  function = response.json()
+                  script_path = function["script_path"]
+                  
+                  # Download script from artifactory if needed
+                  if function.get("artifactory_url"):
+                      logger.info(f"Downloading script from {function['artifactory_url']}")
+                      # Download script implementation here
+                  
+                  # Execute the script
+                  logger.info(f"Executing script {script_path}")
+                  # Script execution implementation here
+                  
+                  # For now, just simulate success
+                  time.sleep(5)
+                  
+                  # Update task status to completed
+                  requests.post(
+                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/complete",
+                      json={"result": "Task completed successfully"}
+                  )
+                  
+                  logger.info(f"Task {task_uid} completed successfully")
+              except Exception as e:
+                  logger.error(f"Error processing task {task_uid}: {e}")
+                  # Update task status to failed
+                  requests.post(
+                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/fail",
+                      json={"error": str(e)}
+                  )
+          
+          def main():
+              """Main worker loop"""
+              logger.info(f"Starting worker {WORKER_UID} on {hostname}")
+              
+              # Register with backend engine
+              if not register_worker():
+                  logger.error("Failed to register worker, exiting")
+                  sys.exit(1)
+              
+              # Main loop
+              heartbeat_interval = 30  # seconds
+              last_heartbeat = 0
+              
+              while True:
+                  current_time = time.time()
+                  
+                  # Send heartbeat at regular intervals
+                  if current_time - last_heartbeat >= heartbeat_interval:
+                      send_heartbeat()
+                      last_heartbeat = current_time
+                  
+                  # Check for tasks
+                  check_for_tasks()
+                  
+                  # Sleep for a bit
+                  time.sleep(5)
+          
+          if __name__ == "__main__":
+              main()
+          EOF
+          
+          # Make the script executable
+          chmod +x /tmp/worker.py
+          
+          # Run the worker
+          python /tmp/worker.py
+      volumes:
+      - name: worker-config
+        configMap:
+          name: ${WORKER_NAME}-config
+          optional: true
+  volumeClaimTemplates:
+  - metadata:
+      name: worker-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${WORKER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: vinci4d-worker
+    grid: ${GRID_UID}
+spec:
+  selector:
+    app: vinci4d-worker
+    worker: ${WORKER_UID}
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+  clusterIP: None

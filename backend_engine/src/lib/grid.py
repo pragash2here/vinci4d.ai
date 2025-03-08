@@ -288,10 +288,23 @@ async def terminate_grid(grid_uid):
         return False
 
 async def update_grid_utilization(grid_uid):
-    """Update grid utilization based on worker status"""
+    """Update grid utilization statistics"""
     try:
         async for session in get_session():
-            # Get the grid
+            # Get worker counts
+            result = await session.execute(
+                text("""
+                SELECT 
+                    COUNT(*) as total_workers,
+                    SUM(CASE WHEN status = :busy_status THEN 1 ELSE 0 END) as busy_workers
+                FROM workers
+                WHERE grid_uid = :grid_uid
+                """),
+                {"busy_status": WorkerStatus.BUSY.value, "grid_uid": grid_uid}  # Use .value to get string
+            )
+            worker_stats = result.fetchone()
+            
+            # Get grid
             result = await session.execute(
                 text("SELECT * FROM grids WHERE uid = :uid"),
                 {"uid": grid_uid}
@@ -302,39 +315,37 @@ async def update_grid_utilization(grid_uid):
                 logger.error(f"Grid {grid_uid} not found")
                 return False
             
-            # Get worker statistics
-            result = await session.execute(
-                text("""
-                SELECT 
-                    COUNT(*) as total_workers,
-                    SUM(CASE WHEN status = :busy_status THEN 1 ELSE 0 END) as busy_workers
-                FROM workers
-                WHERE grid_uid = :grid_uid
-                """),
-                {
-                    "grid_uid": grid_uid,
-                    "busy_status": WorkerStatus.BUSY
-                }
-            )
-            stats = result.fetchone()
+            # Update grid utilization
+            total_workers = worker_stats.total_workers or 0
+            busy_workers = worker_stats.busy_workers or 0
             
-            if not stats or stats.total_workers == 0:
-                logger.warning(f"No workers found for grid {grid_uid}")
-                return True
-            
-            # Calculate utilization
-            utilization = (stats.busy_workers / stats.total_workers) * 100
-            free_slots = stats.total_workers - stats.busy_workers
+            # Calculate utilization percentage
+            utilization = 0
+            if total_workers > 0:
+                utilization = (busy_workers / total_workers) * 100
             
             # Update grid
-            grid.utilization = utilization
-            grid.free_slots = free_slots
-            grid.updated_at = datetime.utcnow()
-            
+            await session.execute(
+                text("""
+                UPDATE grids 
+                SET worker_count = :worker_count, 
+                    busy_workers = :busy_workers,
+                    utilization = :utilization,
+                    updated_at = :updated_at
+                WHERE uid = :uid
+                """),
+                {
+                    "worker_count": total_workers,
+                    "busy_workers": busy_workers,
+                    "utilization": utilization,
+                    "updated_at": datetime.utcnow(),
+                    "uid": grid_uid
+                }
+            )
             await session.commit()
-            logger.info(f"Grid {grid_uid} utilization updated: {utilization:.2f}%, {free_slots} free slots")
-            return True
             
+            logger.info(f"Grid {grid_uid} utilization updated: {utilization:.1f}% ({busy_workers}/{total_workers} workers busy)")
+            return True
     except Exception as e:
         logger.error(f"Error updating grid utilization {grid_uid}: {e}")
         return False

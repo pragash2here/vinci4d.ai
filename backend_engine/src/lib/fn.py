@@ -23,6 +23,7 @@ async def get_all_functions():
                 "script_path": fn.script_path,
                 "artifactory_url": fn.artifactory_url,
                 "resource_requirements": fn.resource_requirements,
+                "docker_image": fn.docker_image,
                 "status": fn.status if not hasattr(fn.status, 'value') else fn.status.value,
                 "created_at": fn.created_at.isoformat() if fn.created_at else None,
                 "updated_at": fn.updated_at.isoformat() if fn.updated_at else None,
@@ -52,6 +53,7 @@ async def get_function_by_uid(uid):
             "script_path": fn.script_path,
             "artifactory_url": fn.artifactory_url,
             "resource_requirements": fn.resource_requirements,
+            "docker_image": fn.docker_image,
             "status": fn.status if not hasattr(fn.status, 'value') else fn.status.value,
             "created_at": fn.created_at.isoformat() if fn.created_at else None,
             "updated_at": fn.updated_at.isoformat() if fn.updated_at else None,
@@ -73,6 +75,7 @@ async def create_new_function(data):
         script_path=data["script_path"],
         artifactory_url=data.get("artifactory_url"),
         resource_requirements=data["resource_requirements"],
+        docker_image=data.get("docker_image", "default"),
         status=FunctionStatus.PENDING,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
@@ -85,6 +88,7 @@ async def create_new_function(data):
         return {
             "uid": function.uid,
             "name": function.name,
+            "docker_image": function.docker_image,
             "status": function.status.value,
             "created_at": function.created_at.isoformat()
         }
@@ -101,7 +105,7 @@ async def update_function(uid, data):
         if not function:
             return None
         
-        # Update fields
+        # Update fields if provided
         if "name" in data:
             function.name = data["name"]
         if "script_path" in data:
@@ -110,6 +114,8 @@ async def update_function(uid, data):
             function.artifactory_url = data["artifactory_url"]
         if "resource_requirements" in data:
             function.resource_requirements = data["resource_requirements"]
+        if "docker_image" in data:
+            function.docker_image = data["docker_image"]
         
         function.updated_at = datetime.utcnow()
         await session.commit()
@@ -117,6 +123,7 @@ async def update_function(uid, data):
         return {
             "uid": function.uid,
             "name": function.name,
+            "docker_image": function.docker_image,
             "status": function.status.value,
             "updated_at": function.updated_at.isoformat()
         }

@@ -44,13 +44,30 @@ class APIClient:
         )
         return self._handle_response(response)
     
-    def delete(self, endpoint):
+    def delete(self, endpoint, params=None):
         """Make a DELETE request to the API"""
-        response = requests.delete(
-            self._url(endpoint),
-            headers=self.headers
-        )
-        return self._handle_response(response)
+        url = f"{self.base_url}{endpoint}"
+        
+        try:
+            response = requests.delete(url, params=params)
+            
+            if response.status_code >= 400:
+                error_data = response.json() if response.content else {"error": "Unknown error"}
+                error_message = error_data.get("error", "Unknown error")
+                raise Exception(f"API Error: {error_message}")
+            
+            # Handle empty responses
+            if not response.content or response.content.strip() == b'':
+                return {"message": "Operation completed successfully"}
+            
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Connection error: {str(e)}")
+        except json.JSONDecodeError:
+            # If we can't decode JSON but the status code is OK, consider it a success
+            if response.status_code < 400:
+                return {"message": "Operation completed successfully"}
+            raise Exception("Invalid response from server")
     
     def _handle_response(self, response):
         """Handle API response and errors"""

@@ -31,6 +31,10 @@ async def create_function(request):
         if field not in data:
             return json({"error": f"Missing required field: {field}"}, status=400)
     
+    # Set default docker_image if not provided
+    if "docker_image" not in data:
+        data["docker_image"] = "default"
+    
     function = await create_new_function(data)
     return json(function, status=201)
 

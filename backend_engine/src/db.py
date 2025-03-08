@@ -115,15 +115,16 @@ class Function(Base):
 
     uid = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    grid_uid = Column(String, ForeignKey('grids.uid'))
+    grid_uid = Column(String, ForeignKey('grids.uid'), nullable=False)
     script_path = Column(String, nullable=False)
     artifactory_url = Column(String)
     resource_requirements = Column(JSON, nullable=False)  # CPU, Memory, GPU requirements
-    started_at = Column(DateTime)
-    ended_at = Column(DateTime)
+    docker_image = Column(String, default="default")  # Add docker_image field with default value
     status = Column(Enum(FunctionStatus), default=FunctionStatus.PENDING)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    started_at = Column(DateTime)
+    ended_at = Column(DateTime)
     logs_url = Column(String)  # URL to task logs in logstore
 
 class Task(Base):
@@ -140,19 +141,19 @@ class Worker(Base):
     __tablename__ = 'workers'
 
     uid = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    grid_uid = Column(String, ForeignKey('grids.uid'))
-    cpu_total = Column(Float, nullable=False)  # Total CPU cores
-    cpu_available = Column(Float)  # Available CPU cores
-    memory_total = Column(Integer, nullable=False)  # Total memory in MB
-    memory_available = Column(Integer)  # Available memory in MB
-    gpu_id = Column(String)  # GPU identifier if available
-    gpu_memory = Column(Integer)  # GPU memory in MB if available
+    name = Column(String, unique=True, nullable=False)  # Make name unique
+    grid_uid = Column(String, ForeignKey('grids.uid'), nullable=False)
+    cpu_total = Column(Float, nullable=False)
+    cpu_available = Column(Float, nullable=False)
+    memory_total = Column(Integer, nullable=False)  # Memory in MB
+    memory_available = Column(Integer, nullable=False)  # Memory in MB
+    gpu_id = Column(String)
+    gpu_memory = Column(Integer)  # GPU memory in MB
     status = Column(Enum(WorkerStatus), default=WorkerStatus.OFFLINE)
     last_heartbeat = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    spec = Column(JSON)  # Additional worker specifications
+    spec = Column(JSON, default={})  # Additional specifications (OS, arch, etc.)
     
 # Database initialization function
 async def init_db():
@@ -166,6 +167,37 @@ async def init_db():
             print("Creating database tables...")
             await conn.run_sync(Base.metadata.create_all)
             print("Database tables created successfully!")
+        
+        # Check if docker_image column exists in functions table
+        # Extract connection parameters
+        db_url = DATABASE_URL
+        if db_url.startswith('postgresql+asyncpg://'):
+            db_url = db_url.replace('postgresql+asyncpg://', 'postgresql://')
+        
+        # Connect to the database
+        conn = await asyncpg.connect(db_url)
+        
+        # Check if the column already exists
+        column_exists = await conn.fetchval("""
+            SELECT EXISTS (
+                SELECT 1 
+                FROM information_schema.columns 
+                WHERE table_name = 'functions' 
+                AND column_name = 'docker_image'
+            )
+        """)
+        
+        if not column_exists:
+            print("Adding docker_image column to functions table...")
+            # Add the column with a default value
+            await conn.execute("""
+                ALTER TABLE functions 
+                ADD COLUMN docker_image VARCHAR DEFAULT 'default' NOT NULL
+            """)
+            print("Column added successfully!")
+        
+        await conn.close()
+        
         return True
     except Exception as e:
         print(f"Error initializing database: {e}")
