@@ -1,6 +1,6 @@
 from sanic import Blueprint
 from sanic.response import json
-from lib.task import get_all_tasks, get_task_by_uid, create_new_task
+from lib.task import get_all_tasks, get_task_by_uid, create_new_task, assign_task_to_worker, update_task_status
 
 bp = Blueprint("task", url_prefix="/api/tasks")
 
@@ -17,10 +17,13 @@ async def get_tasks(request):
     
     if "status" in request.args:
         filters["status"] = request.args.get("status")
+
+    if "worker" in request.args:
+        response = await assign_task_to_worker(request.args.get("worker"))
+        return json(response)
     
-    return json({})
-    # tasks = await get_all_tasks(filters)
-    # return json(tasks)
+    tasks = await get_all_tasks(filters)
+    return json(tasks)
 
 @bp.route("/<uid>", methods=["GET"])
 async def get_task(request, uid):
@@ -54,4 +57,31 @@ async def get_task_status(request, task_id):
     if not task:
         return json({"error": f"Task with UID {task_id} not found"}, status=404)
     
-    return json({"status": task["status"]}) 
+    return json({"status": task["status"]})
+
+@bp.route("/<task_id>/result", methods=["POST"])
+async def update_task_result(request, task_id):
+    """Update task result"""
+    data = request.json
+    
+    if not data:
+        return json({"error": "No data provided"}, status=400)
+    
+    success = data.get("success", False)
+    result = data.get("result")
+    error = data.get("error")
+    worker_uid = data.get("worker_uid")
+    
+    # Update task status and result
+    updated = await update_task_status(
+        task_id, 
+        "completed" if success else "failed",
+        result=result,
+        error=error,
+        worker_uid=worker_uid
+    )
+    
+    if not updated:
+        return json({"error": f"Failed to update task {task_id}"}, status=500)
+    
+    return json({"success": True, "message": f"Task {task_id} updated successfully"})

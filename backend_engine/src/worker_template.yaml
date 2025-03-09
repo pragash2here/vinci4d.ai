@@ -38,11 +38,11 @@ spec:
         - name: GRID_UID
           value: "${GRID_UID}"
         - name: BACKEND_ENGINE_URL
-          value: "${BACKEND_ENGINE_URL}"
+          value: "http://host.docker.internal:8000"
         - name: LOGSTORE_URL
-          value: "${LOGSTORE_URL}"
+          value: "http://logstore:8000"
         - name: ARTIFACTORY_URL
-          value: "${ARTIFACTORY_URL}"
+          value: "http://artifactory:8000"
         volumeMounts:
         - name: worker-data
           mountPath: /data

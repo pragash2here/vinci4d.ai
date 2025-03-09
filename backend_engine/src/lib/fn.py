@@ -244,8 +244,9 @@ async def start_function(function_uid, params=None):
             
             # Get inputs from params
             inputs = []
-            if params and isinstance(params, dict) and 'inputs' in params:
-                inputs = params.get('inputs', [])
+            print(params)
+            if params and isinstance(params, dict) and 'input' in params:
+                inputs = params.get('input', [])
                 if not isinstance(inputs, list):
                     logger.warning(f"Inputs parameter is not a list, using empty list")
                     inputs = []
@@ -255,30 +256,24 @@ async def start_function(function_uid, params=None):
                 logger.info(f"No inputs provided, creating a single task for function {function_uid}")
                 task_uid = str(uuid4())
                 
-                # Create task data
+                # Create task data with inputs
                 task_data = {
-                    'batch_index': 0,
-                    'batch_size': 1,
-                    'batch_total': 1
+                    "input": inputs,
+                    "function_uid": function_uid
                 }
                 
-                # Include parameters in task data if provided
-                if params:
-                    task_data['params'] = params
+                # Create the task
+                task = Task(
+                    uid=str(uuid4()),
+                    function_uid=function_uid,
+                    status="pending",  # Use lowercase string directly
+                    data=task_data,  # Include inputs in task data
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
                 
                 try:
-                    await session.execute(
-                        text("""
-                        INSERT INTO tasks (uid, function_uid, status, created_at, updated_at, data)
-                        VALUES (:uid, :function_uid, 'pending', :now, :now, :data)
-                        """),
-                        {
-                            "uid": task_uid,
-                            "function_uid": function_uid,
-                            "now": datetime.utcnow(),
-                            "data": json.dumps(task_data)
-                        }
-                    )
+                    session.add(task)
                     await session.commit()
                 except Exception as e:
                     logger.error(f"Error creating task: {e}")
@@ -316,27 +311,18 @@ async def start_function(function_uid, params=None):
                     'inputs': batch_inputs
                 }
                 
-                # Include other parameters in task data if provided
-                if params:
-                    # Copy params but exclude 'inputs' to avoid duplication
-                    params_copy = params.copy()
-                    if 'inputs' in params_copy:
-                        del params_copy['inputs']
-                    task_data['params'] = params_copy
+                # Create the task
+                task = Task(
+                    uid=str(uuid4()),
+                    function_uid=function_uid,
+                    status="pending",  # Use lowercase string directly
+                    data=task_data,  # Include inputs in task data
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
                 
                 try:
-                    await session.execute(
-                        text("""
-                        INSERT INTO tasks (uid, function_uid, status, created_at, updated_at, data)
-                        VALUES (:uid, :function_uid, 'pending', :now, :now, :data)
-                        """),
-                        {
-                            "uid": task_uid,
-                            "function_uid": function_uid,
-                            "now": datetime.utcnow(),
-                            "data": json.dumps(task_data)
-                        }
-                    )
+                    session.add(task)
                 except Exception as e:
                     logger.error(f"Error creating task {i+1}/{num_batches}: {e}")
                     # Continue with other tasks
