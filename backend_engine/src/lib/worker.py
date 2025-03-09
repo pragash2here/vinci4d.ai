@@ -82,26 +82,35 @@ async def get_worker_by_uid(uid):
         return worker_dict
 
 async def set_worker_online(uid):
-    """Set a worker status to online"""
+    """Set a worker's status to online"""
     try:
+        logger.info(f"Setting worker {uid} online")
+        
+        # Use direct SQL update instead of ORM to avoid immutability issues
         async for session in get_session():
-            result = await session.execute(
-                text("SELECT * FROM workers WHERE uid = :uid"),
-                {"uid": uid}
+            # Update worker status using SQL
+            await session.execute(
+                text("""
+                UPDATE workers 
+                SET status = 'online', 
+                    last_heartbeat = :now,
+                    updated_at = :now
+                WHERE uid = :uid
+                """),
+                {
+                    "uid": uid,
+                    "now": datetime.utcnow()
+                }
             )
-            worker = result.fetchone()
             
-            if not worker:
-                logger.error(f"Worker {uid} not found")
-                return False
-            
-            worker.status = WorkerStatus.ONLINE
-            worker.updated_at = datetime.utcnow()
-            worker.last_heartbeat = datetime.utcnow()
-            await session.commit()
-            
-            logger.info(f"Worker {uid} set to online")
-            return True
+            try:
+                await session.commit()
+                logger.info(f"Worker {uid} set to online successfully")
+                return True
+            except Exception as commit_error:
+                logger.error(f"Error committing worker status update: {commit_error}")
+                await session.rollback()
+                raise
     except Exception as e:
         logger.error(f"Error setting worker {uid} online: {e}")
         return False
@@ -156,7 +165,7 @@ async def create_worker(data):
             memory_available=data["memory_total"],  # Initially all memory is available
             gpu_id=data.get("gpu_id"),
             gpu_memory=data.get("gpu_memory"),
-            status=WorkerStatus.OFFLINE,
+            status="offline",
             last_heartbeat=None,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
@@ -180,7 +189,7 @@ async def create_worker(data):
                 "uid": worker.uid,
                 "name": worker.name,
                 "grid_uid": worker.grid_uid,
-                "status": worker.status.value,
+                "status": worker.status,
                 "cpu_total": worker.cpu_total,
                 "memory_total": worker.memory_total,
                 "docker_image": worker.spec.get("docker_image", "python:3.11-slim"),
@@ -362,3 +371,34 @@ async def delete_worker_async(deployer, worker_uid, worker_name=None):
             logger.error(f"Failed to delete worker {worker_uid} from Kubernetes")
     except Exception as e:
         logger.error(f"Error deleting worker {worker_uid} from Kubernetes: {e}")
+
+async def update_worker_heartbeat(uid):
+    """Update a worker's heartbeat timestamp"""
+    try:
+        logger.info(f"Updating heartbeat for worker {uid}")
+        
+        # Use direct SQL update
+        async for session in get_session():
+            await session.execute(
+                text("""
+                UPDATE workers 
+                SET last_heartbeat = :now,
+                    updated_at = :now
+                WHERE uid = :uid
+                """),
+                {
+                    "uid": uid,
+                    "now": datetime.utcnow()
+                }
+            )
+            
+            try:
+                await session.commit()
+                return True
+            except Exception as commit_error:
+                logger.error(f"Error committing worker heartbeat update: {commit_error}")
+                await session.rollback()
+                raise
+    except Exception as e:
+        logger.error(f"Error updating heartbeat for worker {uid}: {e}")
+        return False

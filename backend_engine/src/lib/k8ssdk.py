@@ -50,7 +50,7 @@ class K8sDeployer:
                 "MEMORY_REQUEST": str(memory_request),
                 "MEMORY_LIMIT": str(worker["memory_total"]),
                 "GPU_LIMIT": gpu_limit,
-                "BACKEND_ENGINE_URL": os.environ.get("BACKEND_ENGINE_URL", "http://backend-engine:8000"),
+                "BACKEND_ENGINE_URL": "http://host.docker.internal:8000",
                 "LOGSTORE_URL": os.environ.get("LOGSTORE_URL", "http://logstore:8000"),
                 "ARTIFACTORY_URL": os.environ.get("ARTIFACTORY_URL", "http://artifactory:8000")
             }

@@ -26,14 +26,21 @@ class APIClient:
         )
         return self._handle_response(response)
     
-    def post(self, endpoint, data=None):
+    def post(self, endpoint, data=None, files=None):
         """Make a POST request to the API"""
-        response = requests.post(
-            self._url(endpoint),
-            json=data,
-            headers=self.headers
-        )
-        return self._handle_response(response)
+        url = f"{self.base_url}{endpoint}"
+        
+        try:
+            if files:
+                response = requests.post(url, files=files)
+            else:
+                # Ensure data is properly serialized as JSON
+                headers = {'Content-Type': 'application/json'}
+                response = requests.post(url, json=data, headers=headers)
+            
+            return self._handle_response(response)
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Request failed: {str(e)}")
     
     def put(self, endpoint, data=None):
         """Make a PUT request to the API"""
@@ -85,4 +92,22 @@ class APIClient:
         except requests.exceptions.ConnectionError:
             raise Exception("Could not connect to the API server. Is it running?")
         except json.JSONDecodeError:
-            raise Exception("Invalid JSON response from the API") 
+            raise Exception("Invalid JSON response from the API")
+    
+    def post_file(self, endpoint, files=None, data=None):
+        """Send a POST request with file upload"""
+        url = f"{self.base_url}{endpoint}"
+        
+        try:
+            response = requests.post(url, files=files, data=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            if hasattr(e, 'response') and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    if 'error' in error_data:
+                        raise Exception(error_data['error'])
+                except:
+                    pass
+            raise Exception(f"API request failed: {str(e)}") 

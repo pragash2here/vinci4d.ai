@@ -60,31 +60,42 @@ async def get_grid_by_uid(uid):
 
 async def create_new_grid(data):
     """Create a new grid in the database"""
-    # Create grid object
-    grid = Grid(
-        uid=str(uuid.uuid4()),
-        name=data['name'],
-        length=data['length'],
-        width=data['width'],
-        status=GridStatus.CREATING,
-        utilization=0.0,
-        free_slots=data['length'] * data['width'],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
-    )
-    
-    async for session in get_session():
-        session.add(grid)
-        await session.commit()
+    try:
+        # Create grid object with lowercase string values
+        grid = Grid(
+            uid=str(uuid.uuid4()),
+            name=data["name"],
+            length=data.get("length", 1),
+            width=data.get("width", 1),
+            status="active",  # Use lowercase string directly
+            utilization=0.0,
+            free_slots=data.get("length", 1) * data.get("width", 1),
+            worker_count=0,
+            busy_workers=0,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
         
-        # Initialize the grid (this will be done asynchronously)
-        asyncio.create_task(initialize_grid(grid.uid))
-        
-        return {
-            "uid": grid.uid,
-            "name": grid.name,
-            "message": "Grid created successfully"
-        }
+        async for session in get_session():
+            session.add(grid)
+            await session.commit()
+            
+            # Return grid data
+            return {
+                "uid": grid.uid,
+                "name": grid.name,
+                "length": grid.length,
+                "width": grid.width,
+                "status": "active",  # Use lowercase string directly
+                "utilization": 0.0,
+                "free_slots": grid.free_slots,
+                "worker_count": 0,
+                "busy_workers": 0,
+                "created_at": grid.created_at.isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Error creating grid: {e}")
+        return None
 
 async def initialize_grid(grid_uid):
     """Initialize a grid by creating worker nodes"""
@@ -102,7 +113,7 @@ async def initialize_grid(grid_uid):
                 return False
             
             # Check if grid can be initialized
-            if grid.status != GridStatus.CREATING:
+            if grid.status != "creating":  # Use lowercase string
                 logger.error(f"Grid {grid_uid} cannot be initialized from {grid.status} state")
                 return False
             
@@ -119,7 +130,7 @@ async def initialize_grid(grid_uid):
                     cpu_available=4.0,
                     memory_total=8192,  # 8GB in MB
                     memory_available=8192,
-                    status=WorkerStatus.OFFLINE,
+                    status="offline",  # Use lowercase string
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                     spec={"node_type": "standard"}
@@ -127,7 +138,7 @@ async def initialize_grid(grid_uid):
                 session.add(worker)
             
             # Update grid status
-            grid.status = GridStatus.ACTIVE
+            grid.status = "active"  # Use lowercase string
             grid.updated_at = datetime.utcnow()
             
             await session.commit()
@@ -146,7 +157,7 @@ async def initialize_grid(grid_uid):
                 )
                 grid = result.fetchone()
                 if grid:
-                    grid.status = GridStatus.ERROR
+                    grid.status = "error"  # Use lowercase string
                     grid.updated_at = datetime.utcnow()
                     await session.commit()
         except Exception as inner_e:

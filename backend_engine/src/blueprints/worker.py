@@ -74,13 +74,13 @@ async def associate_worker_with_grid_endpoint(request, uid, grid_uid):
 
 @bp.route("/<uid>/online", methods=["POST"])
 async def set_worker_online_endpoint(request, uid):
-    """Set a worker status to online"""
+    """Set a worker's status to online"""
     result = await set_worker_online(uid)
     
     if result:
-        return json({"message": f"Worker {uid} is now online"})
+        return json({"message": f"Worker {uid} set to online"})
     else:
-        return json({"error": f"Failed to set worker {uid} online"}, status=400)
+        return json({"error": f"Failed to set worker {uid} to online"}, status=500)
 
 @bp.route("/<uid>/offline", methods=["POST"])
 async def set_worker_offline_endpoint(request, uid):

@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from tabulate import tabulate
 from cli.api_client import APIClient
+import requests
 
 @click.group(name="fn")
 def fn_cli():
@@ -22,7 +23,7 @@ def list_functions():
             return
         
         # Format data for tabulate
-        headers = ["UID", "Name", "Grid", "Status", "Docker Image", "Resources", "Created"]
+        headers = ["UID", "Name", "Grid", "Status", "Docker Image", "Batch Size", "Resources", "Created"]
         table_data = []
         
         for fn in functions:
@@ -47,6 +48,7 @@ def list_functions():
                 fn["grid_uid"],
                 fn["status"],
                 fn.get("docker_image", "default"),
+                fn.get("batch_size", 1),  # Add batch size
                 resource_str.strip(),
                 fn["created_at"].split("T")[0]  # Format date
             ])
@@ -58,15 +60,45 @@ def list_functions():
 @fn_cli.command(name="create")
 @click.argument("name")
 @click.option("--grid", "-g", required=True, help="Grid UID")
-@click.option("--script", "-s", required=True, help="Path to script")
+@click.option("--script", "-s", required=True, help="Path to script file")
 @click.option("--artifactory", "-a", help="Artifactory URL")
 @click.option("--cpu", "-c", default=1, help="CPU cores required")
 @click.option("--memory", "-m", default=1024, help="Memory required (MB)")
 @click.option("--gpu", "-G", is_flag=True, help="Requires GPU")
-@click.option("--docker-image", "-d", default="default", help="Docker image to use")
-def create_function_cmd(name, grid, script, artifactory, cpu, memory, gpu, docker_image):
+@click.option("--docker-image", "-d", default="python:3.11-slim", help="Docker image to use")
+@click.option("--batch-size", "-b", default=1, help="Number of parallel tasks to create")
+def create_function_cmd(name, grid, script, artifactory, cpu, memory, gpu, docker_image, batch_size):
     """Create a new function"""
     try:
+        # Expand user path (e.g., ~/script.py)
+        script_path = os.path.expanduser(script)
+        
+        # Check if script file exists
+        if not os.path.exists(script_path):
+            click.echo(f"Error: Script file not found: {script_path}")
+            return
+        
+        client = APIClient()
+        
+        # First, upload the script file
+        click.echo("Uploading script file...")
+        
+        # Read the script file
+        with open(script_path, 'rb') as f:
+            script_content = f.read()
+        
+        # Create a multipart form-data request
+        files = {'file': (os.path.basename(script_path), script_content, 'text/plain')}
+        
+        # Upload the file
+        upload_response = client.post_file("/api/functions/upload", files=files)
+        
+        if "error" in upload_response:
+            click.echo(f"Error uploading script: {upload_response['error']}")
+            return
+        
+        click.echo(f"Script uploaded successfully: {upload_response['filename']}")
+        
         # Prepare resource requirements
         resources = {
             "cpu": cpu,
@@ -78,20 +110,24 @@ def create_function_cmd(name, grid, script, artifactory, cpu, memory, gpu, docke
         data = {
             "name": name,
             "grid_uid": grid,
-            "script_path": script,
+            "server_file_path": upload_response["file_path"],  # Use the server file path
             "resource_requirements": resources,
-            "docker_image": docker_image
+            "docker_image": docker_image,
+            "batch_size": batch_size  # Add batch size
         }
         
         if artifactory:
             data["artifactory_url"] = artifactory
         
-        client = APIClient()
+        # Create the function
+        click.echo("Creating function...")
         function = client.post("/api/functions", data)
         
         click.echo(f"Function created with UID: {function['uid']}")
         click.echo(f"Name: {function['name']}")
+        click.echo(f"Script path: {function['script_path']}")
         click.echo(f"Docker Image: {function['docker_image']}")
+        click.echo(f"Batch Size: {function.get('batch_size', 1)}")  # Display batch size
         click.echo(f"Status: {function['status']}")
     except Exception as e:
         click.echo(f"Error: {str(e)}")
@@ -109,6 +145,7 @@ def show_function(uid):
         click.echo(f"Script: {function['script_path']}")
         click.echo(f"Docker Image: {function.get('docker_image', 'default')}")
         click.echo(f"Status: {function['status']}")
+        click.echo(f"Batch Size: {function.get('batch_size', 1)}")
         
         # Get task count
         tasks = client.get("/api/tasks", {"function": uid})
@@ -132,14 +169,52 @@ def show_function(uid):
 
 @fn_cli.command(name="start")
 @click.argument("uid")
-def start_function_cmd(uid):
-    """Start a function"""
+@click.option('--params', '-p', help='JSON string with function parameters')
+@click.option('--params-file', '-f', help='Path to JSON file with function parameters')
+@click.option('--batch-size', '-b', type=int, help='Override batch size for this run')
+def start_function_cmd(uid, params, params_file, batch_size):
+    """Start a function with the given UID"""
+    if params and params_file:
+        click.echo("Error: Cannot specify both --params and --params-file")
+        return
+    
+    # Load parameters from file if specified
+    if params_file:
+        try:
+            with open(params_file, 'r') as f:
+                params = f.read()
+        except Exception as e:
+            click.echo(f"Error reading params file: {e}")
+            return
+    
+    # Parse JSON parameters
+    params_dict = {}
+    if params:
+        try:
+            import json
+            params_dict = json.loads(params)
+        except json.JSONDecodeError:
+            click.echo("Error: Invalid JSON in parameters")
+            return
+    
+    # Add batch size to parameters if specified
+    if batch_size:
+        params_dict['batch_size'] = batch_size
+        # Convert back to JSON string
+        params = json.dumps(params_dict)
+    
+    # Prepare request data
+    data = {}
+    if params:
+        data['params'] = params
+    
+    client = APIClient()
+    # Make API request
     try:
-        client = APIClient()
-        response = client.post(f"/api/functions/{uid}/start")
-        click.echo(response["message"])
+        response = client.post(f"/api/functions/{uid}/start", data)
+        click.echo(f"Function {uid} started successfully")
     except Exception as e:
-        click.echo(f"Error: {str(e)}")
+        click.echo(f"Error starting function: {str(e)}")
 
 @fn_cli.command(name="cancel")
 @click.argument("uid")
@@ -160,5 +235,31 @@ def check_function_status_cmd(uid):
         client = APIClient()
         function = client.get(f"/api/functions/{uid}")
         click.echo(f"Function {uid} status: {function['status']}")
+    except Exception as e:
+        click.echo(f"Error: {str(e)}")
+
+@fn_cli.command(name="delete")
+@click.argument("uid")
+@click.option("--force", "-f", is_flag=True, help="Force deletion without confirmation")
+def delete_function(uid, force):
+    """Delete a function"""
+    try:
+        if not force:
+            # Get function details first
+            client = APIClient()
+            try:
+                function = client.get(f"/api/functions/{uid}")
+                click.echo(f"You are about to delete function: {function['name']} ({uid})")
+            except Exception:
+                click.echo(f"You are about to delete function with UID: {uid}")
+            
+            # Ask for confirmation
+            if not click.confirm("Are you sure you want to delete this function?"):
+                click.echo("Operation cancelled.")
+                return
+        
+        client = APIClient()
+        response = client.delete(f"/api/functions/{uid}")
+        click.echo(response["message"])
     except Exception as e:
         click.echo(f"Error: {str(e)}") 

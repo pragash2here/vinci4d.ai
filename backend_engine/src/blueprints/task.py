@@ -18,8 +18,9 @@ async def get_tasks(request):
     if "status" in request.args:
         filters["status"] = request.args.get("status")
     
-    tasks = await get_all_tasks(filters)
-    return json(tasks)
+    return json({})
+    # tasks = await get_all_tasks(filters)
+    # return json(tasks)
 
 @bp.route("/<uid>", methods=["GET"])
 async def get_task(request, uid):
