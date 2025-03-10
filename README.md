@@ -32,5 +32,30 @@ Deploying the application:
 
 Running the application:
 
-* run `sh port-forward.sh`
+* run `sh port-forward.sh` to forward the ports to the local machine.
 * run `vinci4d-cli`
+
+Application Objects:
+
+   * GRID:
+        - Grid object translates to compute resources.
+        - Grid has length and width
+        - To create a grid: `vinci4d-cli grid create <grid_name> --length 10 --width 10`
+
+   * Worker:
+        - Worker object translates to k8s pod resources.
+        - To create a worker: `vinci4d-cli worker create <worker_name> -g <grid_name>`
+        - you can specify the cpu, memory, gpu, etc.
+
+   * Task:
+        - Task is the unit of work that is assigned to a worker.
+        - Tasks can have multiple inputs.
+        - To list all tasks: `vinci4d-cli task list`
+
+   * FN:
+        - FN is script which contains the buisness logic.
+        - FN can have multiple inputs on which the script works on.
+        - To create a FN: `vinci4d-cli fn create <fn_name> -g <grid_uuid> -s <script_path> -d <docker_image_name>`
+        - To start a FN: `vinci4d-cli fn start <fn_uuid> -f <input_file_path>`
+        - Sample input file: `{"input": [ "1", "2", "3" ], "batch_size": 1}`
+        - To list all FNs: `vinci4d-cli fn list`
