@@ -1,10 +1,12 @@
-sanic
+sanic==23.3.0
 dotenv
-sqlalchemy
-asyncpg
+sqlalchemy==2.0.23
+asyncpg==0.28.0
 greenlet
 click
 tabulate
 requests
-python-dotenv
+python-dotenv==1.0.0
 urllib3
+alembic==1.12.1
+pydantic==2.4.2
