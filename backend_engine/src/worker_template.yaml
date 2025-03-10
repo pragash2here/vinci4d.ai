@@ -125,11 +125,12 @@ spec:
                       params={"worker": WORKER_UID, "status": "pending"}
                   )
                   if response.status_code == 200:
-                      tasks = response.json()
-                      if tasks:
-                          logger.info(f"Found {len(tasks)} pending tasks")
-                          for task in tasks:
-                              process_task(task)
+                      task = response.json()
+                      if task.get("error"):
+                          logger.error(f"No pending tasks found")
+                      else:
+                          logger.info(f"Task: {task}")
+                          process_task(task)
                   else:
                       logger.warning(f"Failed to check for tasks: {response.text}")
               except Exception as e:
@@ -137,18 +138,12 @@ spec:
           
           def process_task(task):
               """Process a single task"""
-              task_uid = task["uid"]
+              task_uid = task["task_uid"]
               function_uid = task["function_uid"]
               
               logger.info(f"Processing task {task_uid} for function {function_uid}")
               
               try:
-                  # Update task status to running
-                  requests.post(
-                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/start",
-                      json={}
-                  )
-                  
                   # Get function details
                   response = requests.get(f"{BACKEND_ENGINE_URL}/api/functions/{function_uid}")
                   if response.status_code != 200:
@@ -157,22 +152,42 @@ spec:
                   function = response.json()
                   script_path = function["script_path"]
                   
-                  # Download script from artifactory if needed
-                  if function.get("artifactory_url"):
-                      logger.info(f"Downloading script from {function['artifactory_url']}")
-                      # Download script implementation here
+                  if not os.path.exists(f"/data/{function_uid}.py"):
+                      # Download script from backend engine if needed
+                      response = requests.get(f"{BACKEND_ENGINE_URL}/api/functions/{function_uid}/script")
+                      if response.status_code != 200:
+                          raise Exception(f"Failed to get function script: {response.text}")
+                  
+                      script_content = response.content
+                  
+                      # Write script to disk
+                      with open(f"/data/{function_uid}.py", "wb") as f:
+                          f.write(script_content)
                   
                   # Execute the script
                   logger.info(f"Executing script {script_path}")
+
+                  import subprocess
                   # Script execution implementation here
+                  result = subprocess.run(["python", f"/data/{function_uid}.py"], capture_output=True, text=True)
+                  logger.info(f"Script {function_uid} output: {result.stdout}")
+                  logger.error(f"Script {function_uid} error: {result.stderr}")
+
+                  # write to stdout when script is running
+                  logger.info(f"Script {function_uid} is running")
                   
-                  # For now, just simulate success
-                  time.sleep(5)
-                  
+                  # catch the return code of the script
+                  return_code = result.returncode
+                  if return_code != 0:
+                      status = "failed"
+                      raise Exception(f"Script {function_uid} returned non-zero exit code: {return_code}")
+                  else:
+                      status = "completed"
+
                   # Update task status to completed
                   requests.post(
-                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/complete",
-                      json={"result": "Task completed successfully"}
+                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/result",
+                      json={"result": status, "worker_uid": WORKER_UID, "error": result.stderr}
                   )
                   
                   logger.info(f"Task {task_uid} completed successfully")
@@ -180,8 +195,8 @@ spec:
                   logger.error(f"Error processing task {task_uid}: {e}")
                   # Update task status to failed
                   requests.post(
-                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/fail",
-                      json={"error": str(e)}
+                      f"{BACKEND_ENGINE_URL}/api/tasks/{task_uid}/result",
+                      json={"result": "failed", "worker_uid": WORKER_UID, "error": str(e)}
                   )
           
           def main():

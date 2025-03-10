@@ -73,6 +73,8 @@ def create_worker(name, grid, cpu, memory, gpu_id, gpu_memory, docker_image, cou
             "grid_uid": grid,
             "cpu_total": cpu,
             "memory_total": memory,
+            "cpu_request": cpu,
+            "memory_request": memory,
             "docker_image": docker_image,
             "count": count
         }

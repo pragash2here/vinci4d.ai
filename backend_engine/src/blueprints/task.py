@@ -67,15 +67,17 @@ async def update_task_result(request, task_id):
     if not data:
         return json({"error": "No data provided"}, status=400)
     
-    success = data.get("success", False)
     result = data.get("result")
-    error = data.get("error")
+    error = data.get("error", '')
     worker_uid = data.get("worker_uid")
     
+    # Determine status based on result
+    status = "completed" if result == "completed" else "failed"
+
     # Update task status and result
     updated = await update_task_status(
-        task_id, 
-        "completed" if success else "failed",
+        task_uid=task_id,
+        status=status,
         result=result,
         error=error,
         worker_uid=worker_uid
@@ -84,4 +86,11 @@ async def update_task_result(request, task_id):
     if not updated:
         return json({"error": f"Failed to update task {task_id}"}, status=500)
     
+    return json({"success": True, "message": f"Task {task_id} updated successfully"})
+
+@bp.route("/<task_id>/status", methods=["POST"])
+async def update_task_status_endpoint(request, task_id):
+    """Update task status"""
+    data = request.json
+    updated = await update_task_status(task_id, data.get("status"))
     return json({"success": True, "message": f"Task {task_id} updated successfully"})

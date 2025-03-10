@@ -3,7 +3,7 @@ import shutil
 import json
 from pathlib import Path
 from sanic import Blueprint
-from sanic.response import json as sanic_json
+from sanic.response import json as sanic_json, file as send_file
 from lib.fn import (
     get_all_functions, 
     get_function_by_uid, 
@@ -52,6 +52,15 @@ async def get_function(request, uid):
         return sanic_json({"error": f"Function with UID {uid} not found"}, status=404)
     
     return sanic_json(function)
+
+@bp.route("/<uid>/script", methods=["GET"])
+async def get_function_script(request, uid):
+    """Get a function script"""
+    # return a file
+    script_path = SCRIPTS_DIR / uid / "main.py"
+    if not script_path.exists():
+        return sanic_json({"error": f"Function script not found for {uid}"}, status=404)
+    return await send_file(script_path)
 
 @bp.route("/", methods=["POST"])
 async def create_function_endpoint(request):

@@ -140,14 +140,15 @@ class Task(Base):
 
     uid = Column(String, primary_key=True)
     function_uid = Column(String, ForeignKey('functions.uid'))
-    worker_uid = Column(String, ForeignKey('workers.uid'))
+    worker_uid = Column(String, ForeignKey('workers.uid', ondelete='SET NULL'))  # Set NULL on worker deletion
     status = Column(Enum(TaskStatus, name="taskstatus"), default=TaskStatus.PENDING)
     data = Column(JSON, default={})  # Store task parameters and other data
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     started_at = Column(DateTime)
     ended_at = Column(DateTime)
-    result = Column(JSON)  # Store task results
+    result = Column(JSON)    # Store task results
+    error = Column(String)    # Store task error
 
 class Worker(Base):
     __tablename__ = 'workers'
