@@ -1,16 +1,14 @@
 Requirements to deploy the application:
 
 * Minikube or a Kubernetes cluster.
+In mac:
+    `brew install minikube`
+    `minikube start`
 
 * Access to pull docker images from the docker registry.
   - Following upstream images are needed:
     - postgres:latest
     - python:3.11-slim
-
-Deploying the application:
-
-* checkout this repository
-* run `sh deploy.sh`
 
 Components:
 
@@ -26,3 +24,13 @@ Components:
 
 * CLI:
     - The cli is the vinci4d-cli. -> which translates to the `backend_engine/src/cli/main.py` file.
+
+Deploying the application:
+
+* checkout this repository
+* run `sh deploy.sh`
+
+Running the application:
+
+* run `sh port-forward.sh`
+* run `vinci4d-cli`

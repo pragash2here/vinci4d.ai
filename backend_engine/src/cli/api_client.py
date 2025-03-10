@@ -2,12 +2,20 @@ import os
 import requests
 import json
 from urllib.parse import urljoin
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from config.env
+env_path = Path(__file__).parent.parent.parent.parent / 'config.env'
+load_dotenv(env_path)
 
 class APIClient:
     """Client for interacting with the Vinci4D API"""
     
     def __init__(self):
-        self.base_url = os.environ.get("BACKEND_ENGINE_URL", "http://localhost:8000")
+        # Get the backend URL from environment variables
+        self.base_url = os.environ.get('BACKEND_ENGINE_URL', 'http://localhost:30001')
+        self.session = requests.Session()
         self.headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
@@ -19,62 +27,31 @@ class APIClient:
     
     def get(self, endpoint, params=None):
         """Make a GET request to the API"""
-        response = requests.get(
-            self._url(endpoint),
-            params=params,
-            headers=self.headers
-        )
-        return self._handle_response(response)
+        url = f"{self.base_url}{endpoint}"
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Raise exception for 4XX/5XX responses
+        return response.json()
     
-    def post(self, endpoint, data=None, files=None):
+    def post(self, endpoint, data=None):
         """Make a POST request to the API"""
         url = f"{self.base_url}{endpoint}"
-        
-        try:
-            if files:
-                response = requests.post(url, files=files)
-            else:
-                # Ensure data is properly serialized as JSON
-                headers = {'Content-Type': 'application/json'}
-                response = requests.post(url, json=data, headers=headers)
-            
-            return self._handle_response(response)
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Request failed: {str(e)}")
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+        return response.json()
     
     def put(self, endpoint, data=None):
         """Make a PUT request to the API"""
-        response = requests.put(
-            self._url(endpoint),
-            json=data,
-            headers=self.headers
-        )
-        return self._handle_response(response)
+        url = f"{self.base_url}{endpoint}"
+        response = requests.put(url, json=data)
+        response.raise_for_status()
+        return response.json()
     
-    def delete(self, endpoint, params=None):
+    def delete(self, endpoint):
         """Make a DELETE request to the API"""
         url = f"{self.base_url}{endpoint}"
-        
-        try:
-            response = requests.delete(url, params=params)
-            
-            if response.status_code >= 400:
-                error_data = response.json() if response.content else {"error": "Unknown error"}
-                error_message = error_data.get("error", "Unknown error")
-                raise Exception(f"API Error: {error_message}")
-            
-            # Handle empty responses
-            if not response.content or response.content.strip() == b'':
-                return {"message": "Operation completed successfully"}
-            
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"Connection error: {str(e)}")
-        except json.JSONDecodeError:
-            # If we can't decode JSON but the status code is OK, consider it a success
-            if response.status_code < 400:
-                return {"message": "Operation completed successfully"}
-            raise Exception("Invalid response from server")
+        response = requests.delete(url)
+        response.raise_for_status()
+        return response.json()
     
     def _handle_response(self, response):
         """Handle API response and errors"""
