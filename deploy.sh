@@ -1,5 +1,6 @@
 #! /bin/bash
 
+sed -i 's/CURRENT_DIR/$(pwd)/g' postgres/postgres_deployment.yaml
 # Create the postgres database
 kubectl apply -f postgres/postgres_deployment.yaml
 

@@ -30,7 +30,7 @@ spec:
       volumes:
       - name: postgres-storage
         hostPath:
-          path: /Users/pragash/code/vinci4d.ai/postgres/data
+          path: CURRENT_DIR/postgres/data
           type: DirectoryOrCreate
 ---
 apiVersion: v1
